@@ -1,0 +1,173 @@
+---
+title: "SP_Data_Prep"
+author: "Wendel Raymond"
+date: "February 12, 2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Squid Pop data preperation
+This script will pull in raw data and prepare it for analysis and visualization. 
+
+The overall goal is to test if the proporiton of missing/consumed squid baits is affected by sea otter presense/density.
+
+```{r libraries}
+library(tidyverse)
+library(corrplot)
+
+theme_set(theme_classic())
+```
+
+```{r functions, echo = FALSE}
+st.er <- function(x, na.rm = TRUE) {
+  stopifnot(is.numeric(x))
+  return(sd(x, na.rm = na.rm)/sqrt(length(x)))
+}
+```
+
+## Data
+We will load the following
+
+1) 2018 Squid pop data
+2) 2018 Sea otter density surveys
+3) 2018 Shell litter data
+4) 2018 Crab data
+5) 2018 Fish data
+
+```{r data}
+## Squid Pops ##
+pops <- read.csv("squid_pops_data_R_4.11.2019MB.csv", header = TRUE, stringsAsFactors = FALSE)
+pops <- pops[1:23, ] # remove rows that just have NAs in them
+pops$n_fallen_over[is.na(pops$n_fallen_over)] <- 0 # covert n fallen over NA to 0
+
+## Sea otter surveys ##
+otts <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A140b334e-edf5-4246-8879-c75f4a78a546", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
+
+sites <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A87744ced-530b-4bae-809e-ff1012c7ae72", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
+
+## Shell Litter ##
+shell <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3Aa4ec0dd9-7c78-480e-8b08-26c64804fe11", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
+
+## Crab ##
+crb18 <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A3c238a13-4db0-4157-a6e0-62704c09b1ea", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
+crb18$taxon <- ifelse(crb18$taxon == "Decapod", "Decapoda", crb18$taxon)
+
+crabLW <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A86a12a5b-0528-457b-a313-26f595293b30", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
+
+colnames(crb18)[1] <- "site" # fix typo
+crb18$string <- as.character(crb18$string) # treat as character not number
+crb18$trap <- ifelse(crb18$trap == "crab ", "crab", crb18$trap) # fix typo
+
+## Fish ##
+fsh18 <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A0cae20e4-8f8e-427e-b7b9-5d8dd7111ec0", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
+```
+
+### Pops
+Calculate  proportion consumed for top and bottom baits per site. Presever site metadata.
+```{r pops}
+## Bottom Baits ##
+pops$prop_botts_cons <- pops$full_bottoms / pops$bottom_pop
+
+## Top Baits ##
+pops$prop_tops_cons <- pops$full_tops / pops$top_pop
+
+## Quick Plots ##
+par(mfrow = c(2, 2))
+hist(pops$prop_botts_cons)
+hist(pops$prop_tops_cons)
+plot(pops$prop_botts_cons, pops$prop_tops_cons)
+par(mfrow = c(1, 1))
+```
+
+### Sea otter densities
+Calculate mean sea otter counts and density for each site
+```{r sea otters}
+## Sum sea otter by site and replicate ##
+otts.site <- otts %>%
+  group_by(site, replicate) %>% 
+  summarise(date = unique(date_yyyy.mm.dd),
+            count_otts = sum(n_otter))
+
+## Calculate survey area ##
+
+```
+
+### Shell litter
+There are a few features form this data that may be of interest. However the most important may be a) proportion of shells with "crab" death estimte and b) proportion of shells with "sea otter" death estimate.
+
+We will count the number of shells in each death estimtate type and then calcualte the proporiton for each site. We will sum across all transects as this will reflect the total predation at the site. Crabs are readonably mobile.
+```{r shells}
+## Calculate rel. freq (proprtion) ##
+shell.site <- shell %>% 
+  group_by(site_name, death_estimate) %>% 
+  summarise(n_death_est = n()) %>% 
+  mutate(freq = n_death_est / sum(n_death_est))
+
+## A plot ##
+ggplot(shell.site) +
+  geom_col(aes(x = site_name, y = freq, fill = death_estimate)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### Crab
+There are a few features form this data that may be of interest. Mean total crab biomass is of primary interest but also the mass by species may be of interest.
+
+#### Calculations
+The first thing to do is to add the length - weight conversions to the staring data frame so that we can convert carapace widths the biomass. This will be done by adding the species specific coefficients to the data frame. Note the this conversion is to what is considered sea otter edible biomass. Also note that fish are recorded in this data that might be useful, but from this point on we are going to remove all fishes. 
+
+```{r crabs only}
+crb18 <- crb18 %>% 
+  filter(taxon == "Decapoda")
+```
+
+Now we will add length weight conversion coefficients
+```{r adding length to weight conversion}
+crb18 <- merge(crb18, crabLW[, c(1, 5:10)], by = "sp_code", all.x = TRUE)
+```
+
+Calculate mass
+```{r calcualte mass}
+crb18$mass_g <- (crb18$a_mean * (crb18$carapace_width_mm)^crb18$b_mean)
+range(crb18$mass_g, na.rm = TRUE)
+```
+
+```{r}
+## Total by site, string ##
+crb18_sum <- crb18 %>% 
+  group_by(place_name, string) %>% 
+  summarize(total_mass = sum(mass_g))
+
+## Add zeros back in ##
+sit <- sort(rep(c("2018_L_01", "2018_H_01", "2018_H_02", "2018_H_03", "2018_L_03", "2018_L_02"), 4))
+dum <- data.frame(site = sit, string = rep(c("1", "2", "3", "4"), 6))
+
+crb18_sum <- merge(crb18_sum, dum, all.y = TRUE)
+crb18_sum[is.na(crb18_sum)] <- 0
+
+## Summary ##
+crb18_site <- crb18_sum %>% 
+  group_by(place_name) %>% 
+  summarise(crb_mass_avg = mean(total_mass),
+            srb_mass_se = st.er(total_mass))
+```
+
+### Fish
+There are a few features form this data that may be of interest. Total fish biomass is of primary interest but also the mass by species may be of interest.
+
+```{r}
+fsh18_site <- fsh18 %>% 
+  filter(place_name != "North Fish Egg Island") %>% 
+  filter(bay_sample == "A") %>% 
+  group_by(place_name) %>% 
+  summarise(fsh_mass = sum(mass_g))
+
+fsh18_sp_site <- fsh18 %>%
+  filter(place_name != "North Fish Egg Island") %>% 
+  filter(bay_sample == "A") %>% 
+  group_by(place_name, sp_code) %>% 
+  summarise(fsh_mass = sum(mass_g),
+            species_common = unique(species_common),
+            species_scientific = unique(species_scientific))
+```
+

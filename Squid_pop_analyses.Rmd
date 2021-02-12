@@ -1,0 +1,86 @@
+---
+title: "Squid pop analyses example"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+# Squid Pop Analyses
+![](https://files.list.co.uk/images/2014/01/06/images.list.co.uk_mighty-bo.jpg)
+
+```{r}
+library(VGAM)
+```
+
+## Data
+Load the data. You may need to change this to match your computer. If the data and this file are in the same folder then you can keep it like this.
+```{r load dat}
+dat <- read.csv("squid_pops_data_R_4.11.2019MB.csv", header = TRUE, stringsAsFactors = FALSE)
+dat <- dat[1:23, ] # remove rows that just have NAs in them
+```
+
+### Some data processing
+Lets take care of the date thing now and convert it to Juliuan day.
+```{r date jul}
+dat$date_set <- as.Date(dat$date_set, format = "%m/%d/%y")
+dat$date_julian <- format(dat$date_set, "%j")
+```
+
+## Checking etc.
+Lets take a look.
+```{r}
+dat
+
+## Look at the structure - this tells you how R is thinking of the different elements ##
+str(dat)
+```
+
+## Prep for analysis
+```{r}
+dat$sea_otter_level <- ordered(dat$sea_otter_level, levels = c("high", "low"))
+```
+
+
+## Extract response data
+What is our response? What did we measure? We counted the number of top and bottom baits in three different states, present, absent, and partial. Given how are data are structured I think it will be easiest to make or response data matrix in a slightly differnet way. We will build a new data frame from scratch while calculating the proportions at the same time. **NOTE** I am not totally sure how you have coded things here so I am assuming that "full_tops" means the number of top baits missing.
+
+We will also need to sepatate the responses of top and bottom baits. So we will be looking at the top and bottom baits in isolation/independently. 
+**Tops**
+```{r resp tops}
+## Calculate proportion of tops absent ##
+top.absent <- dat$full_tops
+top.partial <- dat$partial_tops
+top.present <- (dat$top_pop - dat$full_tops - dat$partial_tops)
+
+## Make a response data frame then a matrix ##
+tops <- data.frame(top.absent, top.partial, top.present)
+tops <- as.matrix(tops)
+rowSums(tops)
+```
+
+**Bottoms** now you try
+```{r resp bott}
+## Calculate proportion of tops absent ##
+
+## Make a response data frame call is bots ##
+
+```
+
+## Model Building
+OK great we have our response data 'tops' and 'bots'. Thats pretty neat! We also have or explanatory data in dat. Things like the date, temp, precip etc. Let to some stats.
+
+![](https://i.imgur.com/svVUetv.png)
+
+Lets fit a model for the top baits. Remember that the output is relative to whatever is designated as the reference behavior. The reference behovior is the last is the response matrix, which is baits being present. This makes interpretaion easier, because everything is relative to nothing happening.
+```{r top mod}
+## The Model ##
+mod1 <- vglm(tops ~ sea_otter_level, multinomial, data = dat)
+summary(mod1)
+
+## Coefficents ##
+coef(mod1)
+exp(coef(mod1))
+```
+
+What do you think this means? Remember that in a multinomial setting everything is thought of as a probability of occurance relative to the reference level. Using the seal example as a reference can you figure it out? You may want to add some code here to help you decide. Hint: just looking at the raw data does it look like there is a sea otter effect?
