@@ -15,6 +15,14 @@ The overall goal is to test if the proporiton of missing/consumed squid baits is
 ```{r libraries}
 library(tidyverse)
 library(corrplot)
+library(sp)
+library(rgdal)
+library(rgeos)
+library(raster)
+library(gdistance)
+library(spatstat)
+library(sf)
+library(bcmaps)
 
 theme_set(theme_classic())
 ```
@@ -61,6 +69,11 @@ crb18$trap <- ifelse(crb18$trap == "crab ", "crab", crb18$trap) # fix typo
 
 ## Fish ##
 fsh18 <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A0cae20e4-8f8e-427e-b7b9-5d8dd7111ec0", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
+
+## POW water ##
+h2o.utm <- readOGR(dsn = "E:/wraymond2/My Documents/Graduate School/APECS_master/ALL_DATA/spatial_data", layer = "POW_water_UTM")
+h2o.latlong <- spTransform(h2o.utm, CRS("+init=epsg:4326"))
+h2o.latlong <- fix_geo_problems(h2o.latlong, tries = 5)
 ```
 
 ### Pops
@@ -88,9 +101,33 @@ otts.site <- otts %>%
   group_by(site, replicate) %>% 
   summarise(date = unique(date_yyyy.mm.dd),
             count_otts = sum(n_otter))
+```
+
+#### Calculate survey area
+```{r}
+## Create spatial sites ##
+sites <- unique(pops[, 1:3])
+
+xy <- sites[, c(2,3)]
+
+sites <- SpatialPointsDataFrame(coords = xy, data = sites, proj4string = CRS("+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0 +datum=WGS84"))
 
 ## Calculate survey area ##
-
+buff <- gBuffer(sites[1, ], byid = TRUE, width = 3704, quadsegs = 10) # create buffer
+buff.water <- gIntersection(h2o.latlong, buff, byid = TRUE) # clip the buffer area by water so we only have water area left
+buff.water <- spTransform(buff.water, CRS("+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0")) # change projection back to UTM
+e <- extent(buff.water) # save the extent of the polygon for later use
+r <- raster(xmn = e@xmin, xmx = e@xmax, ymn = e@ymin, ymx = e@ymax, ncol = (e@xmax - e@xmin) / 50, nrow = (e@ymax - e@ymin) / 50, crs = "+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0") # create a raster with 50 X 50 meter grid cells. This raster is "empty"
+wr <- rasterize(buff.water, r, crs = "+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0") # append water polygon data to raster. This raster is "full"
+wr[wr] <- 50 # convert all raster cell values to a value of 50 (because 50 meters)
+wt <- transition(wr, transitionFunction = function(x){50}, directions = 8) # conver raster to transition layer (required for accCost() below)
+wt <- geoCorrection(wt, type = "r", scl = FALSE) # not really sure what this actually does but you have to do it
+sa <- accCost(wt, site) # calculate the cumulative cost distance
+values(sa) <- (values(sa) * 50) # multiply cost values by 50 to reflect cost in terms of actual distance
+sa[values(sa) > 3700] <- NA # Convert cost rasters > 3700 to NA, now the raster will reflect the true survey area
+survey.poly <- rasterToPolygons(sa, dissolve = TRUE) # covert raster to polygon
+survey.poly.utm <- spTransform(survey.poly, CRS("+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")) # define projection
+survey.poly.latlong <- spTransform(survey.poly, CRS("+init=epsg:4326"))
 ```
 
 ### Shell litter
