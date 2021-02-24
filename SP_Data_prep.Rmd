@@ -50,9 +50,10 @@ pops <- pops[1:23, ] # remove rows that just have NAs in them
 pops$n_fallen_over[is.na(pops$n_fallen_over)] <- 0 # covert n fallen over NA to 0
 
 ## Sea otter surveys ##
-otts <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A140b334e-edf5-4246-8879-c75f4a78a546", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
+otts <- readOGR(dsn = "./Spatial_data", layer = "otts_gps_2018_UTM")
 
-sites <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A577e1c7f-7a8d-42ca-bb5d-e0de70c90480", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
+## Sites (sea otter survey sites - so really Tiff and Wendel's sites)##
+sites <- readOGR(dsn = "./Spatial_data", layer = "seagrass_sites_2018_UTM")
 
 ## Shell Litter ##
 shell <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3Aa4ec0dd9-7c78-480e-8b08-26c64804fe11", method = "libcurl"), header = TRUE, stringsAsFactors = FALSE)
@@ -71,12 +72,9 @@ crb18$trap <- ifelse(crb18$trap == "crab ", "crab", crb18$trap) # fix typo
 fsh18 <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A0cae20e4-8f8e-427e-b7b9-5d8dd7111ec0", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
 
 ## POW water ##
-h2o.utm <- readOGR(dsn = "E:/wraymond2/My Documents/Graduate School/APECS_master/ALL_DATA/spatial_data", layer = "POW_water_UTM")
-
-h2o.utm <- fix_geo_problems(h2o.utm, tries = 5)
+h2o.utm <- readOGR(dsn = "E:/wraymond2/My Documents/Graduate School/APECS General/Sea_otter_index_2020/Sea otter survey 2020/POW_shoreline_UTM", layer = "POW_waters_utm_LD")
 
 h2o.latlong <- spTransform(h2o.utm, CRS("+init=epsg:4326"))
-h2o.latlong <- fix_geo_problems(h2o.latlong, tries = 5)
 ```
 
 ### Pops
@@ -104,7 +102,7 @@ We need to convert the site and otts data into spatial data frames
 ## Sea otters ##
 otts.xy <- otts[, c(3, 4)]
 
-otts.sp <- SpatialPointsDataFrame(coords = otts.xy, data = otts, proj4string = CRS("+proj=utm +zone=8 +ellps=GRS80 +units=m +no_defs +datum=WGS84"))
+otts.sp <- SpatialPointsDataFrame(coords = otts.xy, data = otts, proj4string = CRS("+proj=utm +zone=8 +datum=NAD83 +units=m +no_defs"))
 
 ## Survey Sites ##
 sites <- sites %>% 
@@ -114,7 +112,7 @@ sites$site <- unique(otts$site)
 
 sites.xy <- sites[, c(3, 4)]
 
-sites.sp <- SpatialPointsDataFrame(coords = sites.xy, data = sites, proj4string = CRS("+proj=utm +zone=8 +ellps=GRS80 +units=m +no_defs +datum=WGS84"))
+sites.sp <- SpatialPointsDataFrame(coords = sites.xy, data = sites, proj4string = CRS("+proj=utm +zone=8 +datum=NAD83 +units=m +no_defs"))
 ```
 
 #### Calculate survey area
@@ -123,11 +121,11 @@ sites.sp <- SpatialPointsDataFrame(coords = sites.xy, data = sites, proj4string 
 
 ## Calculate density ##
 d <- data.frame() # set up blank data frame to append to later
-for(i in unique(1:26)){
-  s <- sites.sp[i,] # subset sites 
+for(i in unique(1:36)){
+  s <- sites[i,] # subset sites 
   b <- gBuffer(s, byid = TRUE, width = 3704, quadsegs = 10) # create 3704 meter radius buffer around site
   b <- spTransform(b, CRS("+init=epsg:4326")) # change projection to for next step
-  bw <- gIntersection(h2o.utm, b, byid = TRUE) # clip the buffer area by water so we only have water area left
+  bw <- gIntersection(h2o.latlong, b, byid = TRUE) # clip the buffer area by water so we only have water area left
   bw <- spTransform(bw, CRS("+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0")) # change projection back to UTM
   e <- extent(bw) # save the extent of the polygon for later use
   r <- raster(xmn = e@xmin, xmx = e@xmax, ymn = e@ymin, ymx = e@ymax, ncol = (e@xmax - e@xmin) / 50, nrow = (e@ymax - e@ymin) / 50, crs = "+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0") # create a raster with 50 X 50 meter grid cells. This raster is "empty"
@@ -141,12 +139,49 @@ for(i in unique(1:26)){
   p <- rasterToPolygons(sa, dissolve = TRUE) # covert raster to polygon
   #p <- spTransform(p, CRS("+proj=utm +zone=8 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")) # define projection
   a <- (2500 * length(p) / 1000000) # caculate area of the polygon in sq km. 2500 becasue 50*50=2500
-  o <- over(p, otts.sp) # identifies surveyed otters that intersect/overlap with the polygon
+  o <- over(p, otts) # identifies surveyed otters that intersect/overlap with the polygon
   o <- as.data.frame(unique(o)) # convert that subset of otters to a data frame
   o$area <- a # append the area of the polygon to that data frame
   o$site.site <- sites@data[i,1] # gives sites that the otter pt is associated with based on site df
   d <- rbind(d, o) # bind this data frame to the master one. -----> now go back to the top and start again!
 }
+
+## Clean up raw loop output ##
+# Convert n_otters to numeric
+d$n_otter <- as.numeric(d$n_otter) 
+
+# Remove NA row produced for each site
+d <- na.omit(d)
+
+# save area values for latter use larger values if multiple
+ar <- unique(d[, c(2, 9)])
+ar <- ar[order(ar$site, -abs(ar$area) ), ]
+ar <- ar[ !duplicated(ar$site), ]
+ar <- rbind(ar, data.frame(site = "Garcia Cove", area = 99999)) # fill in dummy for garcia
+
+# Count total otters are each site survey date
+ott.dat <- d %>% 
+  group_by(site, replicate) %>% 
+  summarise(n = sum(n_otter))
+
+# Create dummy data frame of all sites #
+dum <- expand.grid(unique(otts@data$site), unique(ott.dat$replicate))
+colnames(dum)[1] <- "site"
+colnames(dum)[2] <- "replicate"
+
+# Merge density otters with dum
+ott.dat <- merge(ott.dat, dum, by = c("site", "replicate"), all.y = TRUE)
+ott.dat[is.na(ott.dat)] <- 0
+
+# append area
+ott.dat <- merge(ott.dat, ar, by = "site")
+
+## Actaually calucate density  ##
+ott.dat$dens <- ott.dat$n / ott.dat$area
+ott.dat.sum <- ott.dat %>%
+  group_by(site) %>% 
+  summarise(dens_avg = mean(dens))
+
 ```
 
 ### Shell litter
