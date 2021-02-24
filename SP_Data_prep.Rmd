@@ -199,6 +199,22 @@ shell.site <- shell %>%
 ggplot(shell.site) +
   geom_col(aes(x = site_name, y = freq, fill = death_estimate)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+## Extract only crab crack ##
+shell.site.crab <- shell.site %>% 
+  filter(death_estimate == "Crab")
+
+unique(shell.site.crab$site_name)
+unique(ott.dat.sum$site)
+
+test <- ott.dat.sum %>% 
+  filter(site != "Hauti Island" & site != "N Fish Egg Island")
+
+shell.site.crab$ott_dens_avg <- test$dens_avg
+
+
+ggplot(shell.site.crab) +
+  geom_point(aes(x = ott_dens_avg, y = freq))
 ```
 
 ### Crab
