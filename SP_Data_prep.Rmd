@@ -178,10 +178,13 @@ ott.dat <- merge(ott.dat, ar, by = "site")
 
 ## Actaually calucate density  ##
 ott.dat$dens <- ott.dat$n / ott.dat$area
+
 ott.dat.sum <- ott.dat %>%
   group_by(site) %>% 
   summarise(dens_avg = mean(dens))
 
+## EXPORT so you dont have to run the loop everytime ##
+write.csv(ott.dat, "sea_otter_density_2018.csv", row.names = FALSE)
 ```
 
 ### Shell litter
