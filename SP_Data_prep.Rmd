@@ -97,31 +97,20 @@ par(mfrow = c(1, 1))
 ### Sea otter densities
 We need to convert the site and otts data into spatial data frames
 
-#### Spatial conversion
+#### Spatial prep
 ```{r sea otters}
-## Sea otters ##
-otts.xy <- otts[, c(3, 4)]
-
-otts.sp <- SpatialPointsDataFrame(coords = otts.xy, data = otts, proj4string = CRS("+proj=utm +zone=8 +datum=NAD83 +units=m +no_defs"))
-
 ## Survey Sites ##
 sites <- sites %>% 
   filter(grepl('Tiff', Lead))
 sites <- sites[order(sites$site_name),]
 sites$site <- unique(otts$site)
-
-sites.xy <- sites[, c(3, 4)]
-
-sites.sp <- SpatialPointsDataFrame(coords = sites.xy, data = sites, proj4string = CRS("+proj=utm +zone=8 +datum=NAD83 +units=m +no_defs"))
 ```
 
 #### Calculate survey area
 ```{r}
-## Convert spatial files to UTM ##
-
 ## Calculate density ##
 d <- data.frame() # set up blank data frame to append to later
-for(i in unique(1:36)){
+for(i in unique(1:26)){
   s <- sites[i,] # subset sites 
   b <- gBuffer(s, byid = TRUE, width = 3704, quadsegs = 10) # create 3704 meter radius buffer around site
   b <- spTransform(b, CRS("+init=epsg:4326")) # change projection to for next step
@@ -145,7 +134,10 @@ for(i in unique(1:36)){
   o$site.site <- sites@data[i,1] # gives sites that the otter pt is associated with based on site df
   d <- rbind(d, o) # bind this data frame to the master one. -----> now go back to the top and start again!
 }
+```
 
+#### Clean up calculations
+```{r}
 ## Clean up raw loop output ##
 # Convert n_otters to numeric
 d$n_otter <- as.numeric(d$n_otter) 
@@ -198,26 +190,21 @@ shell.site <- shell %>%
   summarise(n_death_est = n()) %>% 
   mutate(freq = n_death_est / sum(n_death_est))
 
-## A plot ##
-ggplot(shell.site) +
-  geom_col(aes(x = site_name, y = freq, fill = death_estimate)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+shell.dum <- expand.grid(unique(shell$site_name), unique(shell$death_estimate))
+colnames(shell.dum)[1] <- "site_name"
+colnames(shell.dum)[2] <- "death_estimate"
+shell.dum$n_death_est <- NA
+shell.dum$freq <- NA
+
+shell.site <- merge(shell.site, shell.dum, by = c("site_name", "death_estimate"), all.y = TRUE)
+
+shell.site[is.na(shell.site)] <- 0
+
+shell.site <- shell.site[, 1:4]
 
 ## Extract only crab crack ##
 shell.site.crab <- shell.site %>% 
   filter(death_estimate == "Crab")
-
-unique(shell.site.crab$site_name)
-unique(ott.dat.sum$site)
-
-test <- ott.dat.sum %>% 
-  filter(site != "Hauti Island" & site != "N Fish Egg Island")
-
-shell.site.crab$ott_dens_avg <- test$dens_avg
-
-
-ggplot(shell.site.crab) +
-  geom_point(aes(x = ott_dens_avg, y = freq))
 ```
 
 ### Crab
@@ -266,12 +253,14 @@ crb18_site <- crb18_sum %>%
 There are a few features form this data that may be of interest. Total fish biomass is of primary interest but also the mass by species may be of interest.
 
 ```{r}
+## Total Site Fish Biomass ##
 fsh18_site <- fsh18 %>% 
   filter(place_name != "North Fish Egg Island") %>% 
   filter(bay_sample == "A") %>% 
   group_by(place_name) %>% 
   summarise(fsh_mass = sum(mass_g))
 
+## Biomass by sp by Site ##
 fsh18_sp_site <- fsh18 %>%
   filter(place_name != "North Fish Egg Island") %>% 
   filter(bay_sample == "A") %>% 
@@ -279,5 +268,102 @@ fsh18_sp_site <- fsh18 %>%
   summarise(fsh_mass = sum(mass_g),
             species_common = unique(species_common),
             species_scientific = unique(species_scientific))
+```
+
+## Curate data
+The goal is to edit the dataframe about so that there is consistent site names and 1:1 data coverage for as many sites as possible. 
+
+There are essentially two types of data. (1) Data that is replicated across all sites and (2) data that only exists at the 'sea otter region' scale. So...
+
+1) Sea otter density, pop, and shell data can all be combined into a single dataframe
+2) Crab and fish data can be combined into a single data frame.
+
+Note that summary information from dataframe 1, like average sea otter density, could be added to dataframe 2, and vise versa. 
+
+### Dataframe 1 - Pops, Otts, n Shells
+
+Manually assign pops to sea otter/shell sites. This will be done by creating a new column in the pops dataframe with 
+new site names. I did this by looking at ArcGIS and deciding what survey site 'should' be assigned to what pop site.
+
+#### Sea otter density
+```{r}
+## Make list of new names that will be easy to combine ##
+pop.new.names <- c("Blanquizal Bay", "Garcia Cove", "S Wadleigh Island", "S Fish Egg Island", "Shinaku Inlet",
+                   "N Fish Egg Island", "Sand Lance Cove/ San Fernando", "Big Tree Bay", "Sukkwan Narrows", "Inner Hydaburg", "Goat Mouth Inlet", "Natzuhini Bay 2", "North Pass 2", "Inner Hydaburg", "Soda Bay", "Farallon Bay", "Mushroom Island", "Big Clam Bay", "Goat's Nose", "Inner Hydaburg", "Nossuk Bay Complex", "Nossuk Bay Complex", "Nossuk Bay Complex")
+
+## Make new column in pops df ##
+pops$site_comb <- pop.new.names
+
+## Calcualte density for synthetic sites ##
+# Inner Hydaburg combines Sukkwan, Mushroom, and the two Natzuhini sites #
+dens_InnerHyd <- sum(ott.dat.sum$dens_avg[ott.dat.sum$site == "Sukkwan Narrows"], ott.dat.sum$dens_avg[ott.dat.sum$site == "Mushroom Island"], ott.dat.sum$dens_avg[ott.dat.sum$site == "Natzuhini Bay 2"], ott.dat.sum$dens_avg[ott.dat.sum$site == "Natzuhini Bay 3"]) / 4
+
+# Nossuk Bay Complex combines the two Nossuk bay sites #
+dens_NossBC <- sum(ott.dat.sum$dens_avg[ott.dat.sum$site == "Nossuk Bay 2"], ott.dat.sum$dens_avg[ott.dat.sum$site == "Nossuk Bay 3"]) / 2
+
+## Bind these new synth sites ##
+otter.new.dens <- rbind(data.frame(site = c("Inner Hydaburg", "Nossuk Bay Complex"), 
+                                   dens_avg = c(dens_InnerHyd, dens_NossBC)))
+
+
+ott.dat.sum.comb <- rbind(ott.dat.sum, otter.new.dens)
+
+## Merge with pop data ##
+pop.redu <- pops %>% 
+  filter(site_comb != "Sand Lance Cove/ San Fernando" & site_comb != "Farallon Bay" & site_comb != "Goat's Nose")
+
+## Make Dataframe 1 ##
+df1 <- merge(pop.redu, ott.dat.sum.comb, by.x = "site_comb", by.y = "site", all.x = TRUE)
+df1[11, 2] <- "Natzuhuni"
+```
+
+#### Shells
+```{r}
+shell_NossBC <- sum(shell.site.crab$freq[shell.site.crab$site_name == "Nossuk Bay b"], shell.site.crab$freq[shell.site.crab$site_name == "Nossuk Bay c"]) / 2
+
+shell_InnerHyd <- sum(shell.site.crab$freq[shell.site.crab$site_name == "Mushroom Island a"], shell.site.crab$freq[shell.site.crab$site_name == "Natzuhini Bay b"], shell.site.crab$freq[shell.site.crab$site_name == "Natzuhini Bay c"], shell.site.crab$freq[shell.site.crab$site_name == "Sukkwan Narrows a"]) / 4
+
+pop.sites <- df1$site
+
+shell.fq <- c(0.1026, 0.0388, 0.0256, 0.0106, 0.0882, shell_InnerHyd, shell_InnerHyd, shell_InnerHyd, 0.0526, 0.0000, 0.0690, 0.1154, 0.0152, shell_NossBC, shell_NossBC, 0.0168, 0.1471, 0.0000, 0.0982, 0.0119)
+
+## Bind these new synth sites ##
+shell.site.crab.new <- data.frame(site = pop.sites, prop_crbshl = shell.fq)
+
+## Merge with df1 ##
+df1 <- merge(df1, shell.site.crab.new)
+
+plot(df1$prop_crbshl, asin(sqrt(df1$prop_botts_cons)))
+```
+
+### Dataframe 2 - crabs and Fish
+
+Add a high/low sea otter indicators in crab and fish dataframes. Then add some summarized data from df1
+
+#### Crabs
+```{r}
+crb18_site$sea_otter_level <- c("high", "high", "low", "low", "high", "low")
+```
+
+#### Fish
+```{r}
+fsh18_site[1,1] <- "Gaktu Cove"
+fsh18_site[3,1] <- "Natzuhini"
+
+df2 <- merge(crb18_site, fsh18_site)
+```
+
+#### Add summarized df1 data
+```{r}
+df1.sum <- df1 %>% 
+  group_by(sea_otter_level) %>% 
+  summarize(prop_botts_cons_avg = mean(prop_botts_cons),
+            prop_botts_cons_se = st.er(prop_botts_cons),
+            ott_dens_avg = mean(dens_avg),
+            ott_dens_se = st.er(dens_avg),
+            prop_crbshl_avg = mean(prop_crbshl),
+            prop_crbshl_se = st.er(prop_crbshl))
+
+df2 <- merge(df2, df1.sum)
 ```
 
