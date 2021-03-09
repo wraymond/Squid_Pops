@@ -179,6 +179,17 @@ ott.dat.sum <- ott.dat %>%
 write.csv(ott.dat, "sea_otter_density_2018.csv", row.names = FALSE)
 ```
 
+#### Read in
+So you don't have to run the loop every time.
+```{r}
+ott.dat <- read.csv("sea_otter_density_2018.csv", header = TRUE, stringsAsFactors = FALSE)
+
+ott.dat.sum <- ott.dat %>%
+  group_by(site) %>% 
+  summarise(dens_avg = mean(dens))
+```
+
+
 ### Shell litter
 There are a few features form this data that may be of interest. However the most important may be a) proportion of shells with "crab" death estimte and b) proportion of shells with "sea otter" death estimate.
 
@@ -332,8 +343,6 @@ shell.site.crab.new <- data.frame(site = pop.sites, prop_crbshl = shell.fq)
 
 ## Merge with df1 ##
 df1 <- merge(df1, shell.site.crab.new)
-
-plot(df1$prop_crbshl, asin(sqrt(df1$prop_botts_cons)))
 ```
 
 ### Dataframe 2 - crabs and Fish
@@ -365,5 +374,12 @@ df1.sum <- df1 %>%
             prop_crbshl_se = st.er(prop_crbshl))
 
 df2 <- merge(df2, df1.sum)
+```
+
+## Export Final Data
+```{r}
+write.csv(df1, "pops_master_allsites.csv", row.names = FALSE)
+write.csv(df2, "pops_master_region.csv", row.names = FALSE)
+
 ```
 
