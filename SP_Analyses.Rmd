@@ -1,0 +1,139 @@
+---
+title: "SP_Analyses"
+author: "Wendel Raymond"
+date: "March 9, 2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Squid pop analyses
+This script will use data prepared in the SP_Data_prep.Rmd script to address questions and hypotheses relating to the proportion of baits consumered in different sea otter regions.
+
+```{r}
+library(tidyverse)
+library(corrplot)
+library(MuMIn)
+
+theme_set(theme_classic())
+```
+
+## Data
+Read in data
+
+1) df1 = 20 sites with full site level data on pops, otters, shells.
+2) df2 = regional breakdowns
+
+```{r}
+## df1 ##
+df1 <- read.csv("pops_master_allsites.csv", header = TRUE, stringsAsFactors = FALSE)
+str(df1)
+
+## df2 ##
+df2 <- read.csv("pops_master_region.csv", header = TRUE, stringsAsFactors = FALSE)
+str(df2)
+```
+
+## Analyses
+We want to preform a regression on proportion consumed as a function of sea otter density, proportion of crab predated shells.
+
+Before we get to that lets do some data exploration
+
+### Data exploration
+
+Correlation plot. The corrplot package it pretty neat. I have made a very simple version. Check out some examples https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html to make some other ones. Hint, you will want to play around with the 'method =' argument
+```{r}
+## Make a correlation matrix ##
+df1.cor <- cor(df1[, c(25, 27, 28)]) 
+
+## Make a dope plot ##
+corrplot(df1.cor, method = "ellipse")
+```
+
+Shape of data. Make some historgrams of the data above. This is just nice to know. It may indicate that we may need to preform a tranformation later. I give you and example below with pops. Try with sea otter density and shells. You can use base R or ggplot. It does not really matter but ggplot is legit for other plot types so you can practice learning that sub-language if you want.
+
+Base R histogram
+```{r}
+## Prop consumed ##
+hist(df1$prop_botts_cons)
+
+## Sea otter density ##
+
+
+## Prop crab shells ##
+```
+
+ggplot historgram
+```{r}
+## Prop consumed ##
+ggplot(df1) +
+  geom_histogram(aes(x = prop_botts_cons))
+
+## Sea otter density ##
+
+
+## Prop crab shells ##
+```
+
+Now that you have made these plots do you suspect there may need to be some transformations? If so what? We will be dealing with proportional data so we may want to see what the proportion data looks like arcsine - square root transformed. Go back and try. Hint 'asin(sqrt(INSERT COLUMN NAME))' will arcsine - square root transform. (Double hint I feel pretty strongly about asin sqrt tranforming proportion data no matter what. We can talk)
+
+### Regression
+This regression will test the effect of sea otter desnity and the proporiton of crab predated shells on the proportion of baits consumed. So in a word equation
+
+prop baits consumed ~ sea otter density + prop crab shells
+
+Should we fit an interaction too? What does the correlation plot suggest? What would that equation look like?
+
+Fit model. We should assume that we will do some model comparison and seleciton so we should set up the code accoringly. Generally, this should proceed by....
+
+1) Fit the 'global' model. This would have all factors and interactions in it. This is sometimes called a 'full' or 'saturated' model.
+
+2) Preform model diagnostics on this full model. Assess fit etc. NOTE assessing fit IS NOT looking at p values of factors but rather looking at diagnostic plots and global p values
+
+3) Make model adjustments given above and re fit if necessary, run diagnostics again.
+
+4) Now... what do the factor p-values say? Are some factors on the line? Would we have a better fit if we removed the interaction?
+
+5) Repeat all the above w/o interaction
+
+#### Fit Models
+```{r}
+## Model 1 ##
+mod1 <- lm()
+
+## Diagnostics ##
+summary(mod1) # pay attention to the R-sq, F and 'global' p (at the bottom of output)
+
+par(mfrow = c(2, 2))
+plot(mod1) # we can talk about what these plots mean if you don't know or just want to talk about data
+par(mfrow = c(1, 1))
+
+## Model 2 ##
+mod2 <- #now remove the interaction?
+```
+
+#### Model selection
+Which model is best? This may both a statistical and philosophical question
+
+Compare models with AIC and drop in F test. WE should probably really be using AICc.
+```{r}
+## AIC ##
+AIC(mod1)
+AIC(mod2)
+# others? #
+
+## AICc ##
+AICc(mod1)
+
+## Drop in F test ##
+anova(mod1, mod2)
+```
+
+#### Plots
+Lets make a pretty picture
+
+```{r}
+ggplot(df1) +
+  geom_point(aes(x = , y = ))
+```
+
