@@ -380,6 +380,5 @@ df2 <- merge(df2, df1.sum)
 ```{r}
 write.csv(df1, "pops_master_allsites.csv", row.names = FALSE)
 write.csv(df2, "pops_master_region.csv", row.names = FALSE)
-
 ```
 
