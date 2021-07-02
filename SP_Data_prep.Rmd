@@ -72,7 +72,7 @@ crb18$trap <- ifelse(crb18$trap == "crab ", "crab", crb18$trap) # fix typo
 fsh18 <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3A0cae20e4-8f8e-427e-b7b9-5d8dd7111ec0", method = "libcurl"), stringsAsFactors = FALSE, header = TRUE)
 
 ## POW water ##
-h2o.utm <- readOGR(dsn = "E:/wraymond2/My Documents/Graduate School/APECS General/Sea_otter_index_2020/Sea otter survey 2020/POW_shoreline_UTM", layer = "POW_waters_utm_LD")
+h2o.utm <- readOGR(dsn = "./Spatial_data", layer = "POW_waters_utm_LD")
 
 h2o.latlong <- spTransform(h2o.utm, CRS("+init=epsg:4326"))
 ```
